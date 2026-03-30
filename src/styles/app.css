@@ -270,3 +270,61 @@ input[type=range] {
   .tabs { padding: 12px 16px 0; }
   .page { padding: 16px; }
 }
+
+/* 🔍 Search Card */
+.search-card {
+  padding: 14px;
+}
+
+/* Search Box */
+.search-box {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.search-box input {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #eee;
+  font-size: 13px;
+  outline: none;
+}
+
+.search-box input:focus {
+  border-color: #8aab94;
+}
+
+/* Search Button */
+.search-box button {
+  background: linear-gradient(135deg,#8aab94,#5a876a);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 0 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* Search Result */
+.search-result {
+  border-left: 4px solid #8aab94;
+  transition: 0.2s;
+}
+
+.search-result:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+}
+
+/* Match Badge */
+.match-badge {
+  font-size: 16px;
+}
+
+/* Loading */
+.loading-text {
+  font-size: 13px;
+  color: var(--text-muted);
+}

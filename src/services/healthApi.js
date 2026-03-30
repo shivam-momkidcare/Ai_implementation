@@ -68,3 +68,16 @@ export const createHealthLog = async (form) => {
 
   return response.json();
 };
+
+
+export const searchHealthLogs = async (query) => {
+  const res = await fetch("http://localhost:3000/api/health/search", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query }),
+  });
+
+  return res.json();
+};

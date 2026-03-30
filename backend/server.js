@@ -15,22 +15,22 @@ mongoose
   .catch((err) => console.error("❌ MongoDB connection error:", err.message));
 
 /* ================= API ROUTE ================= */
-app.post("/api/health/log", async (req, res) => {
-  try {
-    const data = req.body;
-    const aiAdvice = await getPregnancyAdvice(data);
+// app.post("/api/health/log", async (req, res) => {
+//   try {
+//     const data = req.body;
+//     const aiAdvice = await getPregnancyAdvice(data);
 
-    res.json({
-      success: true,
-      log: { aiAdvice },
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: "AI failed",
-    });
-  }
-});
+//     res.json({
+//       success: true,
+//       log: { aiAdvice },
+//     });
+//   } catch (error) {
+//     res.status(500).json({
+//       success: false,
+//       error: "AI failed",
+//     });
+//   }
+// });
 
 app.use("/api/health", require("./routes/health.js"));
 

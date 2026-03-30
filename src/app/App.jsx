@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { INITIAL_FORM, SYMPTOMS, babySizeLabel, trimesterLabel } from "../features/health/constants";
 import { createHealthLog, fetchHealthHistory, mapAdviceFromAi } from "../services/healthApi";
 import "../styles/app.css";
+import { searchHealthLogs } from "../services/healthApi";
 
 export default function App() {
   const [tab, setTab] = useState("home");
@@ -9,6 +10,11 @@ export default function App() {
   const [advice, setAdvice] = useState(null);
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -16,6 +22,7 @@ export default function App() {
     const loadHistory = async () => {
       try {
         const data = await fetchHealthHistory();
+        console.log("Fetched history:", data);
         if (active && data.length > 0) {
           setHistory(data);
         }
@@ -68,6 +75,7 @@ export default function App() {
           hour: "2-digit",
           minute: "2-digit",
         }),
+        name: form.name,
         week: form.week,
         symptoms: form.symptoms.length,
         data: { ...form },
@@ -81,6 +89,41 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery) return;
+
+    setSearchLoading(true);
+    setSearchError("");
+    setSearchResults([]);
+    setIsSearching(true);
+
+    try {
+      const res = await searchHealthLogs(searchQuery);
+
+      if (res.success) {
+        if (res.results.length === 0) {
+          setSearchError("No similar records found 😔");
+        } else {
+          setSearchResults(res.results);
+        }
+      } else {
+        setSearchError("Search failed. Try again.");
+      }
+    } catch (err) {
+      console.error("Search API error:", err);
+      setSearchError("Server error. Please try again.");
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchError("");
+    setIsSearching(false);
   };
 
   const week = parseInt(form.week, 10) || 20;
@@ -287,10 +330,10 @@ export default function App() {
                         {item.type === "nutrition"
                           ? "Personalised for your vitals"
                           : item.type === "exercise"
-                          ? "Safe for your trimester"
-                          : item.type === "warning"
-                          ? "Based on your readings"
-                          : "Upcoming milestones"}
+                            ? "Safe for your trimester"
+                            : item.type === "warning"
+                              ? "Based on your readings"
+                              : "Upcoming milestones"}
                       </div>
                     </div>
                   </div>
@@ -318,35 +361,181 @@ export default function App() {
 
       {tab === "history" && (
         <div className="page">
-          <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "22px", fontWeight: 700, marginBottom: "20px" }}>Health History</div>
-          {history.length === 0 ? (
-            <div className="empty-wrap">
-              <div className="empty-icon">📅</div>
-              <div className="empty-title">No entries yet</div>
-              <div className="empty-sub">Your tracked sessions will appear here after your first log.</div>
+
+          {/* Title */}
+          <div style={{
+            fontFamily: "'Playfair Display',serif",
+            fontSize: "22px",
+            fontWeight: 700,
+            marginBottom: "16px"
+          }}>
+            Health History
+          </div>
+
+          {/* 🔍 Smart Search Card */}
+          <div className="card search-card">
+            <div className="card-title">
+              <span className="icon">🔍</span> Smart Search
             </div>
-          ) : (
-            history.map((entry, index) => (
-              <div
-                key={index}
-                className="history-item"
-                onClick={() => {
-                  setForm(entry.data);
-                  setAdvice(entry.advice);
-                  setTab("advice");
-                }}
-              >
-                <div>
-                  <div className="history-date">{entry.date}</div>
-                  <div className="history-meta">Week {entry.week} · {entry.symptoms} symptom{entry.symptoms !== 1 ? "s" : ""} logged</div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                  <span className="week-badge">Wk {entry.week}</span>
-                  <span className="history-arrow">›</span>
-                </div>
-              </div>
-            ))
+
+            <div className="search-box">
+              <input
+                placeholder="Search like: high BP, sugar issue, fatigue..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+
+              <button onClick={handleSearch}>
+                {searchLoading ? "..." : "Search"}
+              </button>
+            </div>
+          </div>
+
+          {/* 🔥 AI Results */}
+          {searchLoading && (
+            <div className="loading-text" style={{ marginBottom: "10px" }}>
+              Searching smart matches...
+            </div>
           )}
+
+          {/* {searchResults.length > 0 && (
+            <div className="card">
+              <div className="card-title">🔥 AI Matched Results</div>
+
+              {searchResults.map((item, index) => (
+                <div
+                  key={index}
+                  className="history-item search-result"
+                  onClick={() => {
+                    setForm({
+                      name: item.name,
+                      week: item.week,
+                      symptoms: item.symptoms,
+                      bp: item.vitals?.bp,
+                      sugar: item.vitals?.sugar,
+                      hb: item.vitals?.hb,
+                    });
+
+                    const mapped = mapAdviceFromAi(item.aiAdvice);
+                    setAdvice(mapped);
+                    setTab("advice");
+                  }}
+                >
+                  <div>
+                    <div className="history-name">{item.name}</div>
+                    <div className="history-meta">
+                      Week {item.week} · Match {Math.round(item.score * 100)}%
+                    </div>
+                  </div>
+
+                  <div className="match-badge">
+                    🔥
+                  </div>
+                </div>
+              ))}
+            </div>
+          )} */}
+
+          {/* 📅 Normal History */}
+          {/* 🔍 SEARCH MODE */}
+          {isSearching ? (
+            <>
+              {searchLoading && (
+                <div className="loading-text" style={{ marginBottom: "10px" }}>
+                  Searching smart matches...
+                </div>
+              )}
+
+              {!searchLoading && searchError && (
+                <div className="empty-wrap">
+                  <div className="empty-icon">🔍</div>
+                  <div className="empty-title">No Results Found</div>
+                  <div className="empty-sub">{searchError}</div>
+                </div>
+              )}
+
+              {!searchLoading && searchResults.length > 0 && (
+                <div className="card">
+                  <div className="card-title">🔥 AI Matched Results</div>
+
+                  {searchResults.map((item, index) => (
+                    <div
+                      key={index}
+                      className="history-item search-result"
+                      onClick={() => {
+                        setForm({
+                          name: item.name,
+                          week: item.week,
+                          symptoms: item.symptoms,
+                          bp: item.vitals?.bp,
+                          sugar: item.vitals?.sugar,
+                          hb: item.vitals?.hb,
+                        });
+
+                        const mapped = mapAdviceFromAi(item.aiAdvice);
+                        setAdvice(mapped);
+                        setTab("advice");
+                      }}
+                    >
+                      <div>
+                        <div className="history-name">{item.name}</div>
+                        <div className="history-meta">
+                          Week {item.week} · Match {Math.round(item.score * 100)}%
+                        </div>
+                      </div>
+
+                      <div className="match-badge">🔥</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ❌ Clear Search */}
+              <button
+                className="submit-btn"
+                style={{ marginTop: "10px", background: "#e85050" }}
+                onClick={clearSearch}
+              >
+                ❌ Clear Search
+              </button>
+            </>
+          ) : (
+            <>
+              {/* 📅 DEFAULT HISTORY */}
+              {history.length === 0 ? (
+                <div className="empty-wrap">
+                  <div className="empty-icon">📅</div>
+                  <div className="empty-title">No entries yet</div>
+                  <div className="empty-sub">
+                    Your tracked sessions will appear here.
+                  </div>
+                </div>
+              ) : (
+                history.map((entry, index) => (
+                  <div
+                    key={index}
+                    className="history-item"
+                    onClick={() => {
+                      setForm(entry.data);
+                      setAdvice(entry.advice);
+                      setTab("advice");
+                    }}
+                  >
+                    <div>
+                      <div className="history-name">{entry.name}</div>
+                      <div className="history-date">{entry.date}</div>
+                      <div className="history-meta">
+                        Week {entry.week} · {entry.symptoms} symptoms
+                      </div>
+                    </div>
+
+                    <span className="week-badge">Wk {entry.week}</span>
+                  </div>
+                ))
+              )}
+            </>
+          )}
+
         </div>
       )}
     </div>

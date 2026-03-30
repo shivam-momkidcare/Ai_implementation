@@ -15,6 +15,10 @@ const HealthLogSchema = new mongoose.Schema(
     diet:     { type: String },
     activity: { type: String },
     aiAdvice: { type: Object },
+    // ✅ VECTOR FIELD
+   embedding: {
+    type: [Number], // IMPORTANT
+  }
   },
   { timestamps: true, strict: false } // ✅ fixed — merged into one object
 );
