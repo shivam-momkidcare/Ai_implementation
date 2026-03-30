@@ -480,7 +480,7 @@ export default function App() {
                       <div>
                         <div className="history-name">{item.name}</div>
                         <div className="history-meta">
-                          Week {item.week} · Match {Math.round(item.score * 100)}%
+                          Week {item.week} · Match {Math.round((item.score || 0) * 100)}%
                         </div>
                       </div>
 

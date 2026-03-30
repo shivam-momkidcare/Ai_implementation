@@ -50,4 +50,26 @@ Return exactly this JSON:
   }
 }
 
-module.exports = { getPregnancyAdvice };
+module.exports = { getPregnancyAdvice, askWithContext };
+
+async function askWithContext(context, question) {
+  try {
+    const prompt = `You are a compassionate prenatal health assistant.
+Based on the following patient records:
+
+${context}
+
+Answer this question helpfully and concisely:
+${question}`;
+
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      { contents: [{ parts: [{ text: prompt }] }] }
+    );
+
+    return response.data.candidates[0].content.parts[0].text;
+  } catch (error) {
+    console.error("Gemini askWithContext Error:", error.response?.data || error.message);
+    return "Unable to generate answer. Please try again.";
+  }
+}

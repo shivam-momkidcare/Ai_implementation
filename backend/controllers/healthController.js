@@ -1,37 +1,76 @@
 const HealthLog = require("../models/HealthLog");
-const { getPregnancyAdvice } = require("../services/geminiService");
+const { getPregnancyAdvice, askWithContext } = require("../services/geminiService");
 const { getEmbedding } = require("../utils/embedding");
 
-// POST /api/health/log
+// ─── Helpers ────────────────────────────────────────────
+
+const VECTOR_INDEX = "vector_index";
+const MIN_SCORE = 0.55;
+const SCORE_RATIO = 0.9;
+
+function buildEmbeddingText({ name, week, symptoms, vitals, diet, activity, aiAdvice }) {
+  return [
+    `Name: ${name}`,
+    `Week: ${week}`,
+    `Symptoms: ${symptoms.join(", ")}`,
+    `BP: ${vitals.bp}`,
+    `Sugar: ${vitals.sugar}`,
+    `HB: ${vitals.hb}`,
+    `Diet: ${diet}`,
+    `Activity: ${activity}`,
+    `Advice: ${JSON.stringify(aiAdvice)}`,
+  ].join("\n");
+}
+
+function filterByScore(results) {
+  let filtered = results.filter((r) => r.score >= MIN_SCORE);
+  if (filtered.length > 0) {
+    const cutoff = filtered[0].score * SCORE_RATIO;
+    filtered = filtered.filter((r) => r.score >= cutoff);
+  }
+  return filtered;
+}
+
+async function vectorSearch(queryEmbedding, limit = 10) {
+  return HealthLog.aggregate([
+    {
+      $vectorSearch: {
+        index: VECTOR_INDEX,
+        queryVector: queryEmbedding,
+        path: "embedding",
+        numCandidates: 100,
+        limit,
+      },
+    },
+    {
+      $project: {
+        name: 1,
+        age: 1,
+        week: 1,
+        weight: 1,
+        symptoms: 1,
+        vitals: 1,
+        diet: 1,
+        activity: 1,
+        aiAdvice: 1,
+        createdAt: 1,
+        score: { $meta: "vectorSearchScore" },
+      },
+    },
+  ]);
+}
+
+// ─── POST /api/health/log ───────────────────────────────
+
 exports.logHealth = async (req, res) => {
   try {
     const { name, age, week, weight, symptoms, vitals, diet, activity } = req.body;
 
-    console.log("📥 Received data:", req.body);
-
-    // ✅ 1. AI Advice
     const aiAdvice = await getPregnancyAdvice(req.body);
-    console.log("🤖 AI Advice:", aiAdvice);
 
-    // ✅ 2. Embedding text (VERY IMPORTANT 🔥)
-    const textForEmbedding = `
-    Name: ${name}
-    Week: ${week}
-    Symptoms: ${symptoms.join(", ")}
-    BP: ${vitals.bp}
-    Sugar: ${vitals.sugar}
-    HB: ${vitals.hb}
-    Diet: ${diet}
-    Activity: ${activity}
-    Advice: ${JSON.stringify(aiAdvice)}
-    `;
+    const embeddingText = buildEmbeddingText({ name, week, symptoms, vitals, diet, activity, aiAdvice });
+    const embedding = await getEmbedding(embeddingText);
 
-    // ✅ 3. Generate embedding
-    const embedding = await getEmbedding(textForEmbedding);
-
-    console.log("🧠 Embedding length:", embedding.length);
-
-    // ✅ 4. Save everything
     const log = await HealthLog.create({
       name,
       age: Number(age),
@@ -46,125 +85,74 @@ exports.logHealth = async (req, res) => {
       diet,
       activity,
       aiAdvice,
-      embedding, // 🔥 ADD THIS
+      embedding,
     });
 
-    console.log("✅ Saved to DB:", log._id);
-
+    console.log("✅ Saved:", log._id);
     res.status(201).json({ success: true, log });
-
   } catch (err) {
-    console.error("❌ Error saving:", err.message);
+    console.error("❌ Log error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 };
 
-// GET /api/health/history
+// ─── GET /api/health/history ────────────────────────────
+
 exports.getHistory = async (req, res) => {
   try {
-    const logs = await HealthLog.find()
-      .sort({ createdAt: -1 }); // ❌ limit hata diya
-
-    res.json({
-      success: true,
-      logs,
-    });
+    const logs = await HealthLog.find({}, { embedding: 0 }).sort({ createdAt: -1 });
+    res.json({ success: true, logs });
   } catch (err) {
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
+// ─── POST /api/health/search ────────────────────────────
 
 exports.vectorSearch = async (req, res) => {
   try {
     const { query } = req.body;
-    console.log("🔍 Search query:", query);
-
     if (!query) {
       return res.status(400).json({ success: false, error: "Query required" });
     }
 
-    // 🔥 1. Convert query → embedding
+    console.log("🔍 Search query:", query);
+
     const queryEmbedding = await getEmbedding(query);
+    const results = await vectorSearch(queryEmbedding);
+    const filtered = filterByScore(results);
 
-    // 🔥 2. Vector search
-    const results = await HealthLog.aggregate([
-      {
-        $vectorSearch: {
-          index: "vector_index",
-          queryVector: queryEmbedding,
-          path: "embedding",
-          numCandidates: 100,
-          limit: 10,
-        },
-      },
-      {
-        $project: {
-          name: 1,
-          week: 1,
-          symptoms: 1,
-          vitals: 1,
-          aiAdvice: 1,
-          score: { $meta: "vectorSearchScore" },
-        },
-      },
-    ]);
-    console.log("🔍 Search results:", results);
-    res.json({ success: true, results });
-
+    console.log("🔍 Results:", filtered.length);
+    res.json({ success: true, results: filtered });
   } catch (err) {
-    console.error("❌ Vector Search Error:", err.message);
+    console.error("❌ Search error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 };
 
+// ─── POST /api/health/ask ───────────────────────────────
 
 exports.askAI = async (req, res) => {
   try {
     const { query } = req.body;
+    if (!query) {
+      return res.status(400).json({ success: false, error: "Query required" });
+    }
 
-    // 1. vector search
     const queryEmbedding = await getEmbedding(query);
+    const docs = await vectorSearch(queryEmbedding, 3);
 
-    const docs = await HealthLog.aggregate([
-      {
-        $vectorSearch: {
-          index: "vector_index",
-          queryVector: queryEmbedding,
-          path: "embedding",
-          numCandidates: 50,
-          limit: 3,
-        },
-      },
-    ]);
+    const context = docs
+      .map(
+        (d) =>
+          `Patient: ${d.name}, Week: ${d.week}, BP: ${d.vitals.bp}, Sugar: ${d.vitals.sugar}, Symptoms: ${d.symptoms.join(", ")}`
+      )
+      .join("\n");
 
-    // 2. context build
-    const context = docs.map(d => `
-    Name: ${d.name}
-    Week: ${d.week}
-    BP: ${d.vitals.bp}
-    Sugar: ${d.vitals.sugar}
-    Advice: ${JSON.stringify(d.aiAdvice)}
-    `).join("\n");
-
-    // 3. send to Gemini
-    const finalPrompt = `
-    Based on below patient history:
-
-    ${context}
-
-    Answer this:
-    ${query}
-    `;
-
-    const answer = await getPregnancyAdvice({ customPrompt: finalPrompt });
-
+    const answer = await askWithContext(context, query);
     res.json({ success: true, answer });
-
   } catch (err) {
+    console.error("❌ Ask error:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 };

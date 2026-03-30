@@ -3,9 +3,11 @@ const axios = require("axios");
 exports.getEmbedding = async (text) => {
   try {
     const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
+    const deployment = process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT;
+    const apiVersion = process.env.AZURE_OPENAI_API_VERSION;
 
     const res = await axios.post(
-      `${endpoint}/openai/deployments/text-embedding-3-large/embeddings?api-version=2024-02-15-preview`,
+      `${endpoint}/openai/deployments/${deployment}/embeddings?api-version=${apiVersion}`,
       {
         input: text,
       },
