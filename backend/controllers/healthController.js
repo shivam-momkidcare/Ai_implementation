@@ -2,8 +2,6 @@ const HealthLog = require("../models/HealthLog");
 const { getPregnancyAdvice, askWithContext } = require("../services/geminiService");
 const { getEmbedding } = require("../utils/embedding");
 
-// ─── Helpers ────────────────────────────────────────────
-
 const VECTOR_INDEX = "vector_index";
 const MIN_SCORE = 0.55;
 const SCORE_RATIO = 0.9;
@@ -31,7 +29,7 @@ function filterByScore(results) {
   return filtered;
 }
 
-async function vectorSearch(queryEmbedding, limit = 10) {
+async function runVectorSearch(queryEmbedding, limit = 10) {
   return HealthLog.aggregate([
     {
       $vectorSearch: {
@@ -60,14 +58,12 @@ async function vectorSearch(queryEmbedding, limit = 10) {
   ]);
 }
 
-// ─── POST /api/health/log ───────────────────────────────
-
+// POST /api/health/log
 exports.logHealth = async (req, res) => {
   try {
     const { name, age, week, weight, symptoms, vitals, diet, activity } = req.body;
 
     const aiAdvice = await getPregnancyAdvice(req.body);
-
     const embeddingText = buildEmbeddingText({ name, week, symptoms, vitals, diet, activity, aiAdvice });
     const embedding = await getEmbedding(embeddingText);
 
@@ -96,8 +92,7 @@ exports.logHealth = async (req, res) => {
   }
 };
 
-// ─── GET /api/health/history ────────────────────────────
-
+// GET /api/health/history
 exports.getHistory = async (req, res) => {
   try {
     const logs = await HealthLog.find({}, { embedding: 0 }).sort({ createdAt: -1 });
@@ -107,8 +102,7 @@ exports.getHistory = async (req, res) => {
   }
 };
 
-// ─── POST /api/health/search ────────────────────────────
-
+// POST /api/health/search
 exports.vectorSearch = async (req, res) => {
   try {
     const { query } = req.body;
@@ -119,7 +113,7 @@ exports.vectorSearch = async (req, res) => {
     console.log("🔍 Search query:", query);
 
     const queryEmbedding = await getEmbedding(query);
-    const results = await vectorSearch(queryEmbedding);
+    const results = await runVectorSearch(queryEmbedding);
     const filtered = filterByScore(results);
 
     console.log("🔍 Results:", filtered.length);
@@ -130,8 +124,7 @@ exports.vectorSearch = async (req, res) => {
   }
 };
 
-// ─── POST /api/health/ask ───────────────────────────────
-
+// POST /api/health/ask
 exports.askAI = async (req, res) => {
   try {
     const { query } = req.body;
@@ -140,7 +133,7 @@ exports.askAI = async (req, res) => {
     }
 
     const queryEmbedding = await getEmbedding(query);
-    const docs = await vectorSearch(queryEmbedding, 3);
+    const docs = await runVectorSearch(queryEmbedding, 3);
 
     const context = docs
       .map(
