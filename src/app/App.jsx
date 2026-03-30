@@ -1,543 +1,424 @@
-import { useEffect, useState } from "react";
-import { INITIAL_FORM, SYMPTOMS, babySizeLabel, trimesterLabel } from "../features/health/constants";
-import { createHealthLog, fetchHealthHistory, mapAdviceFromAi } from "../services/healthApi";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { DynamicRenderer } from "../components/DynamicRenderer";
+import * as api from "../services/healthApi";
 import "../styles/app.css";
-import { searchHealthLogs } from "../services/healthApi";
 
-export default function App() {
-  const [tab, setTab] = useState("home");
-  const [form, setForm] = useState(INITIAL_FORM);
-  const [advice, setAdvice] = useState(null);
+function generateSessionId() {
+  return "s_" + Math.random().toString(36).slice(2, 11) + Date.now().toString(36);
+}
+
+// ─── Auth Screen ────────────────────────────────────
+function AuthScreen({ onAuth }) {
+  const [isSignup, setIsSignup] = useState(true);
+  const [form, setForm] = useState({ name: "", email: "", phone: "" });
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [history, setHistory] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [searchError, setSearchError] = useState("");
-  const [isSearching, setIsSearching] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-
-    const loadHistory = async () => {
-      try {
-        const data = await fetchHealthHistory();
-        console.log("Fetched history:", data);
-        if (active && data.length > 0) {
-          setHistory(data);
-        }
-      } catch (error) {
-        console.error("History fetch error:", error);
-      }
-    };
-
-    loadHistory();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const set = (key, value) => setForm((previous) => ({ ...previous, [key]: value }));
-
-  const toggleSymptom = (symptom) => {
-    setForm((previous) => ({
-      ...previous,
-      symptoms: previous.symptoms.includes(symptom)
-        ? previous.symptoms.filter((item) => item !== symptom)
-        : [...previous.symptoms, symptom],
-    }));
-  };
-
-  const handleSubmit = async () => {
+  const handle = async (e) => {
+    e.preventDefault();
+    setError("");
     setLoading(true);
-    setAdvice(null);
-    setTab("advice");
-
     try {
-      const response = await createHealthLog(form);
-      console.log("API response:", response);
-
-      if (!response.success) {
-        alert("Server returned an error. Check console.");
-        console.error("Server error:", response);
-        return;
-      }
-
-      const mappedAdvice = mapAdviceFromAi(response.log.aiAdvice);
-      setAdvice(mappedAdvice);
-
-      const entry = {
-        date: new Date().toLocaleDateString("en-IN", {
-          day: "numeric",
-          month: "short",
-          year: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-        name: form.name,
-        week: form.week,
-        symptoms: form.symptoms.length,
-        data: { ...form },
-        advice: mappedAdvice,
-      };
-
-      setHistory((previous) => [entry, ...previous]);
-    } catch (error) {
-      console.error("API error:", error);
-      alert("Something went wrong. Is the server running?");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSearch = async () => {
-    if (!searchQuery) return;
-
-    setSearchLoading(true);
-    setSearchError("");
-    setSearchResults([]);
-    setIsSearching(true);
-
-    try {
-      const res = await searchHealthLogs(searchQuery);
-
-      if (res.success) {
-        if (res.results.length === 0) {
-          setSearchError("No similar records found 😔");
-        } else {
-          setSearchResults(res.results);
-        }
+      if (isSignup) {
+        if (!form.name || !form.email) { setError("Name & email required"); setLoading(false); return; }
+        const res = await api.signup(form.name, form.email, form.phone);
+        if (res.success) onAuth(res.user, !res.isExisting);
+        else setError(res.error || "Signup failed");
       } else {
-        setSearchError("Search failed. Try again.");
+        if (!form.email) { setError("Email required"); setLoading(false); return; }
+        const res = await api.login(form.email);
+        if (res.success) onAuth(res.user, false);
+        else setError(res.error || "Login failed");
       }
-    } catch (err) {
-      console.error("Search API error:", err);
-      setSearchError("Server error. Please try again.");
-    } finally {
-      setSearchLoading(false);
-    }
+    } catch { setError("Server unreachable. Is backend running?"); }
+    setLoading(false);
   };
-
-  const clearSearch = () => {
-    setSearchQuery("");
-    setSearchResults([]);
-    setSearchError("");
-    setIsSearching(false);
-  };
-
-  const week = parseInt(form.week, 10) || 20;
-  const progress = Math.round((week / 40) * 100);
-  const circumference = 2 * Math.PI * 38;
-  const dashOffset = circumference - (progress / 100) * circumference;
 
   return (
-    <div className="app">
-      <nav className="nav">
-        <div className="nav-logo"><span>🌸</span> MamaAI</div>
-        <div className="nav-week">Week {form.week || "—"} · {trimesterLabel(week)}</div>
-      </nav>
-
-      <div className="tabs">
-        {[["home", "🏠 Home"], ["track", "📋 Track Today"], ["advice", "✨ AI Advice"], ["history", "📅 History"]].map(([id, label]) => (
-          <button key={id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>{label}</button>
-        ))}
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="auth-header">
+          <div className="auth-logo">🌸 MomKidCare</div>
+          <h1 className="auth-title">{isSignup ? "Create Your Account" : "Welcome Back"}</h1>
+          <p className="auth-sub">{isSignup ? "Start your personalized healthcare journey" : "Sign in to continue"}</p>
+        </div>
+        <form className="auth-form" onSubmit={handle}>
+          {isSignup && (
+            <div className="auth-field">
+              <label>Full Name</label>
+              <input placeholder="e.g. Priya Sharma" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+          )}
+          <div className="auth-field">
+            <label>Email</label>
+            <input type="email" placeholder="priya@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </div>
+          {isSignup && (
+            <div className="auth-field">
+              <label>Phone (optional)</label>
+              <input type="tel" placeholder="+91 98765 43210" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            </div>
+          )}
+          {error && <div className="auth-error">{error}</div>}
+          <button className="auth-submit" type="submit" disabled={loading}>
+            {loading ? "Please wait..." : isSignup ? "Get Started" : "Sign In"}
+          </button>
+        </form>
+        <div className="auth-switch">
+          {isSignup ? "Already have an account?" : "Don't have an account?"}
+          <button onClick={() => { setIsSignup(!isSignup); setError(""); }}>
+            {isSignup ? "Sign In" : "Sign Up"}
+          </button>
+        </div>
       </div>
+    </div>
+  );
+}
 
-      {tab === "home" && (
-        <div className="page">
-          <div className="card hero-card">
-            <div className="ring-wrap">
-              <svg width="90" height="90" viewBox="0 0 90 90">
-                <circle className="ring-bg" cx="45" cy="45" r="38" />
-                <circle
-                  className="ring-fill"
-                  cx="45"
-                  cy="45"
-                  r="38"
-                  strokeDasharray={circumference}
-                  strokeDashoffset={dashOffset}
-                />
-              </svg>
-              <div className="ring-center">
-                <div className="ring-week">{form.week}</div>
-                <div className="ring-label">WEEKS</div>
-              </div>
-            </div>
-            <div className="hero-info">
-              <h2>{form.name ? `Hello, ${form.name}! 🌸` : "Welcome, Mama! 🌸"}</h2>
-              <p>Your baby is about the size of <strong>{babySizeLabel(week)}</strong>.</p>
-              <div className="tri"><span className="tri-badge">{trimesterLabel(week)} · {progress}% complete</span></div>
-            </div>
-          </div>
+// ─── Chat Mode ──────────────────────────────────────
+function ChatMode({ user, sessionId }) {
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({});
+  const chatEndRef = useRef(null);
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" }}>
-            {[
-              {
-                label: "Blood Pressure",
-                val: `${form.bp}`,
-                unit: "mmHg",
-                icon: "❤️",
-                color: parseInt(form.bp, 10) > 140 ? "#e85050" : parseInt(form.bp, 10) > 130 ? "#d4a853" : "#8aab94",
-              },
-              {
-                label: "Blood Sugar",
-                val: `${form.sugar}`,
-                unit: "mg/dL",
-                icon: "🩸",
-                color: parseInt(form.sugar, 10) > 140 ? "#e85050" : parseInt(form.sugar, 10) > 110 ? "#d4a853" : "#8aab94",
-              },
-              {
-                label: "Hemoglobin",
-                val: `${form.hb}`,
-                unit: "g/dL",
-                icon: "💉",
-                color: parseFloat(form.hb) < 10 ? "#e85050" : parseFloat(form.hb) < 11 ? "#d4a853" : "#8aab94",
-              },
-            ].map((stat) => (
-              <div key={stat.label} className="card" style={{ padding: "14px", textAlign: "center", marginBottom: 0 }}>
-                <div style={{ fontSize: "22px", marginBottom: "4px" }}>{stat.icon}</div>
-                <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "18px", fontWeight: 700, color: stat.color }}>{stat.val}</div>
-                <div style={{ fontSize: "10px", color: "var(--text-muted)", marginTop: "2px" }}>{stat.unit}</div>
-                <div style={{ fontSize: "10.5px", fontWeight: 600, color: "var(--text-soft)", marginTop: "4px" }}>{stat.label}</div>
-              </div>
-            ))}
-          </div>
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loading]);
 
-          {form.symptoms.length > 0 && (
-            <div className="card">
-              <div className="card-title"><span className="icon">😔</span> Today&apos;s Symptoms</div>
-              <div className="symptom-grid">
-                {form.symptoms.map((symptom) => <span key={symptom} className="sym-tag on">{symptom}</span>)}
-              </div>
-            </div>
-          )}
+  const handleSend = async () => {
+    const text = input.trim();
+    if (!text || loading) return;
+    setInput("");
+    setMessages((prev) => [...prev, { role: "user", content: text }]);
+    setLoading(true);
+    try {
+      const res = await api.sendMessage(text, sessionId, "chat");
+      setMessages((prev) => [...prev, {
+        role: "assistant", content: res.message, ui: res.ui, actions: res.actions, ragSources: res.ragSources,
+      }]);
+    } catch {
+      setMessages((prev) => [...prev, {
+        role: "assistant", content: "Sorry, something went wrong.",
+        ui: [{ type: "alert", props: { variant: "danger", title: "Error", message: "Could not reach the server." } }], actions: {},
+      }]);
+    }
+    setLoading(false);
+  };
 
-          <button className="submit-btn" onClick={() => setTab("track")}>
-            📋 Log Today&apos;s Health
-          </button>
-        </div>
-      )}
+  const handleKeyDown = (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } };
 
-      {tab === "track" && (
-        <div className="page">
-          <div className="card">
-            <div className="card-title"><span className="icon">👤</span> Basic Information</div>
-            <div className="form-grid">
-              <div className="field">
-                <label>Your Name</label>
-                <input placeholder="e.g. Priya" value={form.name} onChange={(event) => set("name", event.target.value)} />
-              </div>
-              <div className="field">
-                <label>Age</label>
-                <input type="number" placeholder="e.g. 28" value={form.age} onChange={(event) => set("age", event.target.value)} />
-              </div>
-              <div className="field">
-                <label>Pregnancy Week</label>
-                <input type="number" min="1" max="42" placeholder="e.g. 20" value={form.week} onChange={(event) => set("week", event.target.value)} />
-              </div>
-              <div className="field">
-                <label>Weight (kg)</label>
-                <input type="number" placeholder="e.g. 65" value={form.weight} onChange={(event) => set("weight", event.target.value)} />
-              </div>
-            </div>
-          </div>
+  const handleAction = async (actionKey, actionDef) => {
+    if (!actionDef) return;
+    if (actionDef.type === "navigate" && actionDef.endpoint) { window.open(actionDef.endpoint, "_blank", "noopener"); return; }
+    if (actionDef.type === "send_message") {
+      setInput(actionDef.params?.message || actionDef.description || "");
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await api.executeAction(actionKey, actionDef.params || {});
+      setMessages((prev) => [...prev, {
+        role: "assistant", content: result.message || "Done.",
+        ui: result.data ? [{ type: "container", props: { variant: "success", padding: "md" }, children: [
+          { type: "text", props: { variant: "subheading", content: "Action Completed", color: "success" } },
+          { type: "text", props: { variant: "body", content: JSON.stringify(result.data, null, 2) } },
+        ]}] : [], actions: {},
+      }]);
+    } catch {
+      setMessages((prev) => [...prev, { role: "assistant", content: "Action failed.", ui: [], actions: {} }]);
+    }
+    setLoading(false);
+  };
 
-          <div className="card">
-            <div className="card-title"><span className="icon">🌡️</span> Symptoms Today</div>
-            <div className="symptom-grid">
-              {SYMPTOMS.map((symptom) => (
-                <span
-                  key={symptom}
-                  className={`sym-tag ${form.symptoms.includes(symptom) ? "on" : ""}`}
-                  onClick={() => toggleSymptom(symptom)}
-                >
-                  {symptom}
-                </span>
+  const handleInputChange = (field, value) => setFormData((prev) => ({ ...prev, [field]: value }));
+
+  const quickPrompts = [
+    "I'm 28 weeks pregnant and having headaches",
+    "What should I eat during second trimester?",
+    "Find me a nanny in Delhi",
+    "I need to book an OB-GYN consultation",
+  ];
+
+  return (
+    <div className="chat-mode">
+      <div className="chat-area">
+        {messages.length === 0 && (
+          <div className="welcome">
+            <div className="welcome-icon">💬</div>
+            <h1 className="welcome-title">Chat with MomKidCare AI</h1>
+            <p className="welcome-sub">Ask me anything about pregnancy, baby care, find nannies, book doctors, or get health tips.</p>
+            <div className="quick-prompts">
+              {quickPrompts.map((p) => (
+                <button key={p} className="quick-prompt" onClick={() => setInput(p)}>{p}</button>
               ))}
             </div>
           </div>
-
-          <div className="card">
-            <div className="card-title"><span className="icon">📊</span> Vitals</div>
-            {[
-              { key: "bp", label: "Blood Pressure (mmHg)", min: 80, max: 180, step: 1 },
-              { key: "sugar", label: "Blood Sugar (mg/dL)", min: 60, max: 250, step: 1 },
-              { key: "hb", label: "Hemoglobin (g/dL)", min: 7, max: 16, step: 0.1 },
-            ].map((vital) => (
-              <div key={vital.key} className="vital-row">
-                <div className="vital-label">{vital.label}</div>
-                <input
-                  type="range"
-                  min={vital.min}
-                  max={vital.max}
-                  step={vital.step}
-                  value={form[vital.key]}
-                  onChange={(event) => set(vital.key, event.target.value)}
-                />
-                <div className="vital-val">{form[vital.key]}</div>
-              </div>
-            ))}
+        )}
+        {messages.map((msg, i) => (
+          <div key={i} className={`message message--${msg.role}`}>
+            {msg.role === "assistant" && <div className="message-avatar">🤖</div>}
+            <div className="message-body">
+              {msg.content && <div className="message-text">{msg.content}</div>}
+              {msg.ui && msg.ui.length > 0 && (
+                <div className="message-ui">
+                  <DynamicRenderer schema={msg.ui} actions={msg.actions} onAction={handleAction} onInputChange={handleInputChange} formData={formData} />
+                </div>
+              )}
+              {msg.ragSources > 0 && <div className="message-rag">Grounded in {msg.ragSources} source{msg.ragSources > 1 ? "s" : ""}</div>}
+            </div>
+            {msg.role === "user" && <div className="message-avatar user-avatar">👤</div>}
           </div>
+        ))}
+        {loading && (
+          <div className="message message--assistant">
+            <div className="message-avatar">🤖</div>
+            <div className="message-body"><div className="typing-indicator"><span></span><span></span><span></span></div></div>
+          </div>
+        )}
+        <div ref={chatEndRef} />
+      </div>
+      <div className="input-area">
+        <div className="input-wrapper">
+          <textarea className="chat-input" placeholder="Type your message..." value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} rows={1} />
+          <button className="send-btn" onClick={handleSend} disabled={!input.trim() || loading}>➤</button>
+        </div>
+        <div className="input-hint">AI responses are for guidance only. Always consult your healthcare provider.</div>
+      </div>
+    </div>
+  );
+}
 
-          <div className="card">
-            <div className="card-title"><span className="icon">🥦</span> Diet & Lifestyle</div>
-            <div className="form-grid full">
-              <div className="field">
-                <label>What did you eat today?</label>
-                <input placeholder="e.g. dal rice, fruits, milk" value={form.diet} onChange={(event) => set("diet", event.target.value)} />
-              </div>
-              <div className="field">
-                <label>Physical Activity</label>
-                <select value={form.activity} onChange={(event) => set("activity", event.target.value)}>
-                  <option value="">Select activity level</option>
-                  <option value="none">None / Bed rest</option>
-                  <option value="light">Light (short walk)</option>
-                  <option value="moderate">Moderate (yoga / swim)</option>
-                  <option value="active">Active (gym / brisk walk)</option>
-                </select>
-              </div>
+// ─── App Mode ───────────────────────────────────────
+function AppMode({ user, sessionId }) {
+  const [page, setPage] = useState(user.onboarded ? "home" : "onboarding");
+  const [pageUI, setPageUI] = useState([]);
+  const [pageActions, setPageActions] = useState({});
+  const [sidebarUI, setSidebarUI] = useState([]);
+  const [formData, setFormData] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(1);
+  const [onboardingAnswers, setOnboardingAnswers] = useState({});
+
+  const loadPage = useCallback(async (pageId) => {
+    setLoading(true);
+    try {
+      let res;
+      if (pageId === "home") {
+        res = await api.getDashboard(user._id);
+      } else if (pageId === "vendors") {
+        res = await api.getVendors({ userId: user._id });
+      } else if (pageId === "onboarding") {
+        res = await api.onboardingStep(user._id, onboardingStep, onboardingAnswers);
+      } else {
+        res = await api.sendMessage(`Show me the ${pageId} page`, sessionId, "app");
+      }
+      setPageUI(res.ui || []);
+      setPageActions(res.actions || {});
+      setSidebarUI(res.sidebar || []);
+    } catch {
+      setPageUI([{ type: "alert", props: { variant: "danger", title: "Error", message: "Failed to load page." } }]);
+    }
+    setLoading(false);
+  }, [user._id, sessionId, onboardingStep, onboardingAnswers]);
+
+  useEffect(() => { loadPage(page); }, [page, loadPage]);
+
+  const handleAction = async (actionKey, actionDef) => {
+    if (!actionDef) return;
+
+    if (actionDef.type === "navigate") {
+      if (actionDef.endpoint?.startsWith("/")) {
+        const pageId = actionDef.endpoint.replace("/", "");
+        setPage(pageId);
+      } else if (actionDef.endpoint) {
+        window.open(actionDef.endpoint, "_blank", "noopener");
+      }
+      return;
+    }
+
+    if (actionDef.type === "switch_tab") {
+      const tabId = actionDef.params?.tabId || actionKey.replace("switch_tab_", "");
+      if (tabId === "nanny" || tabId === "doctor" || tabId === "all") {
+        setLoading(true);
+        const res = await api.getVendors({ userId: user._id, type: tabId === "all" ? undefined : tabId });
+        setPageUI(res.ui || []);
+        setPageActions(res.actions || {});
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (actionDef.type === "submit_form" || actionKey === "next_step") {
+      if (page === "onboarding") {
+        const newAnswers = { ...onboardingAnswers, ...formData };
+        setOnboardingAnswers(newAnswers);
+        const nextStep = onboardingStep + 1;
+        if (nextStep > 5) {
+          await api.updateUser(user._id, { onboarded: true });
+          user.onboarded = true;
+          setPage("home");
+        } else {
+          setOnboardingStep(nextStep);
+          setLoading(true);
+          const res = await api.onboardingStep(user._id, nextStep, newAnswers);
+          setPageUI(res.ui || []);
+          setPageActions(res.actions || {});
+          setLoading(false);
+        }
+        return;
+      }
+    }
+
+    if (actionDef.type === "send_message") {
+      setLoading(true);
+      const res = await api.sendMessage(actionDef.params?.message || actionDef.description, sessionId, "app");
+      setPageUI(res.ui || []);
+      setPageActions(res.actions || {});
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await api.executeAction(actionKey, actionDef.params || {});
+      if (result.success) {
+        setPageUI((prev) => [
+          { type: "alert", props: { variant: "success", title: "Success", message: result.message } },
+          ...prev,
+        ]);
+      }
+    } catch { /* ignore */ }
+    setLoading(false);
+  };
+
+  const handleInputChange = (field, value) => setFormData((prev) => ({ ...prev, [field]: value }));
+
+  const navItems = [
+    { id: "home", label: "Home", icon: "🏠" },
+    { id: "vendors", label: "Services", icon: "👥" },
+    { id: "history", label: "History", icon: "📋" },
+    { id: "profile", label: "Profile", icon: "👤" },
+  ];
+
+  return (
+    <div className="app-mode">
+      {page !== "onboarding" && (
+        <div className="app-sidebar">
+          <div className="sidebar-logo">🌸 MomKidCare</div>
+          <nav className="sidebar-nav">
+            {navItems.map((item) => (
+              <button key={item.id} className={`sidebar-item ${page === item.id ? "sidebar-item--active" : ""}`} onClick={() => setPage(item.id)}>
+                <span className="sidebar-icon">{item.icon}</span>
+                <span className="sidebar-label">{item.label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="sidebar-user">
+            <div className="sidebar-user-avatar">{user.name?.[0]?.toUpperCase() || "?"}</div>
+            <div className="sidebar-user-info">
+              <div className="sidebar-user-name">{user.name}</div>
+              <div className="sidebar-user-email">{user.email}</div>
             </div>
           </div>
-
-          <button className="submit-btn" onClick={handleSubmit}>
-            ✨ Get AI Health Advice
-          </button>
         </div>
       )}
 
-      {tab === "advice" && (
-        <div className="page">
+      <div className="app-main">
+        {page !== "onboarding" && (
+          <div className="app-topbar">
+            <div className="topbar-title">
+              {navItems.find((n) => n.id === page)?.label || page}
+            </div>
+            <div className="topbar-actions">
+              <button className="topbar-btn" onClick={() => loadPage(page)}>↻</button>
+            </div>
+          </div>
+        )}
+
+        <div className="app-content">
           {loading ? (
-            <div className="loading-wrap">
-              <div className="loading-petals">🌸</div>
-              <div className="loading-text">Personalising your health advice…</div>
-              <div style={{ fontSize: "13px", color: "var(--text-muted)" }}>Analysing week {form.week} data</div>
-            </div>
-          ) : advice ? (
-            <div className="advice-section">
-              <div style={{ marginBottom: "4px" }}>
-                <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "22px", fontWeight: 700, color: "var(--text)" }}>Your Health Insights</div>
-                <div style={{ fontSize: "13px", color: "var(--text-muted)", marginTop: "4px" }}>Week {form.week} · {trimesterLabel(week)}</div>
-              </div>
-              {advice.map((item, index) => (
-                <div key={item.type} className={`advice-card ${item.type}`} style={{ animationDelay: `${index * 0.1}s` }}>
-                  <div className="advice-header">
-                    <div className={`advice-icon ${item.type}`}>{item.icon}</div>
-                    <div>
-                      <div className="advice-title">{item.title}</div>
-                      <div className="advice-sub">
-                        {item.type === "nutrition"
-                          ? "Personalised for your vitals"
-                          : item.type === "exercise"
-                            ? "Safe for your trimester"
-                            : item.type === "warning"
-                              ? "Based on your readings"
-                              : "Upcoming milestones"}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="advice-items">
-                    {item.items.map((line, lineIndex) => <div key={lineIndex} className="advice-item">{line}</div>)}
-                  </div>
-                </div>
-              ))}
-              <button className="submit-btn" style={{ background: "linear-gradient(135deg,#8aab94,#5a876a)" }} onClick={() => setTab("track")}>
-                🔄 Update Today&apos;s Data
-              </button>
+            <div className="app-loading">
+              <div className="app-loading-spinner"></div>
+              <div className="app-loading-text">Loading your personalized experience...</div>
             </div>
           ) : (
-            <div className="empty-wrap">
-              <div className="empty-icon">🌷</div>
-              <div className="empty-title">No advice yet</div>
-              <div className="empty-sub">Log your health data on the Track tab to receive personalised AI recommendations.</div>
-              <button className="submit-btn" style={{ marginTop: "8px", maxWidth: "260px" }} onClick={() => setTab("track")}>
-                📋 Start Tracking
-              </button>
-            </div>
+            <DynamicRenderer schema={pageUI} actions={pageActions} onAction={handleAction} onInputChange={handleInputChange} formData={formData} />
           )}
         </div>
-      )}
+      </div>
+    </div>
+  );
+}
 
-      {tab === "history" && (
-        <div className="page">
+// ─── Root App ───────────────────────────────────────
+export default function App() {
+  const [mode, setMode] = useState(null); // null = pick, "chat", "app"
+  const [user, setUser] = useState(null);
+  const [sessionId] = useState(() => generateSessionId());
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
 
-          {/* Title */}
-          <div style={{
-            fontFamily: "'Playfair Display',serif",
-            fontSize: "22px",
-            fontWeight: 700,
-            marginBottom: "16px"
-          }}>
-            Health History
+  const handleAuth = (u, isNew) => {
+    setUser(u);
+    setNeedsOnboarding(isNew);
+    if (!u.onboarded && mode === "app") setNeedsOnboarding(true);
+  };
+
+  // Mode picker
+  if (!mode) {
+    return (
+      <div className="mode-picker">
+        <div className="mode-picker__inner">
+          <div className="mode-picker__logo">🌸</div>
+          <h1 className="mode-picker__title">MomKidCare AI</h1>
+          <p className="mode-picker__sub">Your AI-powered maternal & child healthcare companion</p>
+          <div className="mode-picker__cards">
+            <button className="mode-card mode-card--app" onClick={() => setMode("app")}>
+              <div className="mode-card__icon">📱</div>
+              <div className="mode-card__title">App Mode</div>
+              <div className="mode-card__desc">Full dashboard with personalized recommendations, vendor listings, health tracking & onboarding</div>
+            </button>
+            <button className="mode-card mode-card--chat" onClick={() => setMode("chat")}>
+              <div className="mode-card__icon">💬</div>
+              <div className="mode-card__title">Chat Mode</div>
+              <div className="mode-card__desc">Quick conversational AI assistant for questions, symptoms, booking & instant help</div>
+            </button>
           </div>
-
-          {/* 🔍 Smart Search Card */}
-          <div className="card search-card">
-            <div className="card-title">
-              <span className="icon">🔍</span> Smart Search
-            </div>
-
-            <div className="search-box">
-              <input
-                placeholder="Search like: high BP, sugar issue, fatigue..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-
-              <button onClick={handleSearch}>
-                {searchLoading ? "..." : "Search"}
-              </button>
-            </div>
-          </div>
-
-          {/* 🔥 AI Results */}
-          {searchLoading && (
-            <div className="loading-text" style={{ marginBottom: "10px" }}>
-              Searching smart matches...
-            </div>
-          )}
-
-          {/* {searchResults.length > 0 && (
-            <div className="card">
-              <div className="card-title">🔥 AI Matched Results</div>
-
-              {searchResults.map((item, index) => (
-                <div
-                  key={index}
-                  className="history-item search-result"
-                  onClick={() => {
-                    setForm({
-                      name: item.name,
-                      week: item.week,
-                      symptoms: item.symptoms,
-                      bp: item.vitals?.bp,
-                      sugar: item.vitals?.sugar,
-                      hb: item.vitals?.hb,
-                    });
-
-                    const mapped = mapAdviceFromAi(item.aiAdvice);
-                    setAdvice(mapped);
-                    setTab("advice");
-                  }}
-                >
-                  <div>
-                    <div className="history-name">{item.name}</div>
-                    <div className="history-meta">
-                      Week {item.week} · Match {Math.round(item.score * 100)}%
-                    </div>
-                  </div>
-
-                  <div className="match-badge">
-                    🔥
-                  </div>
-                </div>
-              ))}
-            </div>
-          )} */}
-
-          {/* 📅 Normal History */}
-          {/* 🔍 SEARCH MODE */}
-          {isSearching ? (
-            <>
-              {searchLoading && (
-                <div className="loading-text" style={{ marginBottom: "10px" }}>
-                  Searching smart matches...
-                </div>
-              )}
-
-              {!searchLoading && searchError && (
-                <div className="empty-wrap">
-                  <div className="empty-icon">🔍</div>
-                  <div className="empty-title">No Results Found</div>
-                  <div className="empty-sub">{searchError}</div>
-                </div>
-              )}
-
-              {!searchLoading && searchResults.length > 0 && (
-                <div className="card">
-                  <div className="card-title">🔥 AI Matched Results</div>
-
-                  {searchResults.map((item, index) => (
-                    <div
-                      key={index}
-                      className="history-item search-result"
-                      onClick={() => {
-                        setForm({
-                          name: item.name,
-                          week: item.week,
-                          symptoms: item.symptoms,
-                          bp: item.vitals?.bp,
-                          sugar: item.vitals?.sugar,
-                          hb: item.vitals?.hb,
-                        });
-
-                        const mapped = mapAdviceFromAi(item.aiAdvice);
-                        setAdvice(mapped);
-                        setTab("advice");
-                      }}
-                    >
-                      <div>
-                        <div className="history-name">{item.name}</div>
-                        <div className="history-meta">
-                          Week {item.week} · Match {Math.round((item.score || 0) * 100)}%
-                        </div>
-                      </div>
-
-                      <div className="match-badge">🔥</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* ❌ Clear Search */}
-              <button
-                className="submit-btn"
-                style={{ marginTop: "10px", background: "#e85050" }}
-                onClick={clearSearch}
-              >
-                ❌ Clear Search
-              </button>
-            </>
-          ) : (
-            <>
-              {/* 📅 DEFAULT HISTORY */}
-              {history.length === 0 ? (
-                <div className="empty-wrap">
-                  <div className="empty-icon">📅</div>
-                  <div className="empty-title">No entries yet</div>
-                  <div className="empty-sub">
-                    Your tracked sessions will appear here.
-                  </div>
-                </div>
-              ) : (
-                history.map((entry, index) => (
-                  <div
-                    key={index}
-                    className="history-item"
-                    onClick={() => {
-                      setForm(entry.data);
-                      setAdvice(entry.advice);
-                      setTab("advice");
-                    }}
-                  >
-                    <div>
-                      <div className="history-name">{entry.name}</div>
-                      <div className="history-date">{entry.date}</div>
-                      <div className="history-meta">
-                        Week {entry.week} · {entry.symptoms} symptoms
-                      </div>
-                    </div>
-
-                    <span className="week-badge">Wk {entry.week}</span>
-                  </div>
-                ))
-              )}
-            </>
-          )}
-
         </div>
-      )}
+      </div>
+    );
+  }
+
+  // App mode requires auth
+  if (mode === "app" && !user) {
+    return (
+      <div className="app-wrapper">
+        <button className="back-to-modes" onClick={() => setMode(null)}>← Back</button>
+        <AuthScreen onAuth={handleAuth} />
+      </div>
+    );
+  }
+
+  // Chat mode — no auth required
+  if (mode === "chat") {
+    return (
+      <div className="app">
+        <nav className="nav">
+          <div className="nav-left">
+            <button className="nav-back" onClick={() => setMode(null)}>←</button>
+            <div className="nav-logo"><span>💬</span> MomKidCare Chat</div>
+          </div>
+          <div className="nav-badge">AI Chat Mode</div>
+        </nav>
+        <ChatMode user={user} sessionId={sessionId} />
+      </div>
+    );
+  }
+
+  // App mode
+  return (
+    <div className="app app--full">
+      <AppMode user={user} sessionId={sessionId} />
+      <button className="fab-chat" onClick={() => setMode("chat")} title="Switch to Chat">💬</button>
     </div>
   );
 }
