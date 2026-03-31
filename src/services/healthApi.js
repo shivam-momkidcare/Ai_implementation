@@ -81,3 +81,12 @@ export const searchHealthLogs = async (query) => {
 
   return res.json();
 };
+
+export const askAI = async (query) => {
+  const res = await fetch(`${API_BASE_URL}/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+  });
+  return res.json();
+};

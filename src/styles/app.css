@@ -328,3 +328,95 @@ input[type=range] {
   font-size: 13px;
   color: var(--text-muted);
 }
+
+/* ===== AI INSIGHTS TAB ===== */
+
+/* Single column cards (1-2 sections) */
+.ai-cards-single {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 2-column grid (3-4 sections) */
+.ai-cards-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 480px) {
+  .ai-cards-grid { grid-template-columns: 1fr; }
+}
+
+/* Table layout (5+ sections) */
+.ai-table-wrap {
+  overflow: hidden;
+}
+.ai-table-scroll {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.ai-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.ai-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 8px 12px;
+  border-bottom: 2px solid var(--border);
+}
+.ai-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.ai-table tr:last-child td {
+  border-bottom: none;
+}
+.ai-table tr:hover td {
+  background: rgba(249, 232, 224, 0.3);
+}
+.ai-table-icon {
+  font-size: 20px;
+  width: 40px;
+  text-align: center;
+}
+.ai-table-title {
+  white-space: nowrap;
+}
+.ai-table-title strong {
+  font-family: 'Playfair Display', serif;
+  font-size: 14px;
+  color: var(--text);
+  display: block;
+}
+.ai-type-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 99px;
+  margin-top: 4px;
+}
+.ai-type-badge.insight { background: rgba(106, 146, 232, 0.15); color: #5a7ec9; }
+.ai-type-badge.warning { background: rgba(232, 80, 80, 0.12); color: #c94a4a; }
+.ai-type-badge.tip     { background: rgba(138, 171, 148, 0.2); color: #5a876a; }
+.ai-type-badge.stat    { background: rgba(212, 168, 83, 0.18); color: #b08a30; }
+.ai-table-items {
+  margin: 0;
+  padding-left: 16px;
+  list-style: disc;
+}
+.ai-table-items li {
+  line-height: 1.6;
+  color: var(--text-soft);
+  margin-bottom: 2px;
+}

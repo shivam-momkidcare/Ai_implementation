@@ -59,17 +59,38 @@ Based on the following patient records:
 
 ${context}
 
-Answer this question helpfully and concisely:
-${question}`;
+Answer this question: ${question}
+
+IMPORTANT: Return ONLY valid JSON (no markdown, no backticks).
+Return an object with a "sections" array. Each section has:
+- "title": short heading
+- "icon": a single relevant emoji
+- "type": one of "insight", "warning", "tip", "stat"
+- "items": array of short bullet-point strings
+
+Return as many sections as needed (2-6) based on the question complexity.
+Example format:
+{
+  "sections": [
+    { "title": "Key Findings", "icon": "🔍", "type": "insight", "items": ["Point 1", "Point 2"] },
+    { "title": "Recommendations", "icon": "💡", "type": "tip", "items": ["Tip 1", "Tip 2"] }
+  ]
+}`;
 
     const response = await axios.post(
       `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
       { contents: [{ parts: [{ text: prompt }] }] }
     );
 
-    return response.data.candidates[0].content.parts[0].text;
+    const text = response.data.candidates[0].content.parts[0].text;
+    const cleaned = text.replace(/```json|```/g, "").trim();
+    return JSON.parse(cleaned);
   } catch (error) {
     console.error("Gemini askWithContext Error:", error.response?.data || error.message);
-    return "Unable to generate answer. Please try again.";
+    return {
+      sections: [
+        { title: "Error", icon: "⚠️", type: "warning", items: ["Unable to generate answer. Please try again."] }
+      ]
+    };
   }
 }

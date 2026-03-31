@@ -2,7 +2,6 @@ const HealthLog = require("../models/HealthLog");
 const { getPregnancyAdvice, askWithContext } = require("../services/geminiService");
 const { getEmbedding } = require("../utils/embedding");
 
-const VECTOR_INDEX = "vector_index";
 const MIN_SCORE = 0.55;
 const SCORE_RATIO = 0.9;
 
@@ -29,33 +28,27 @@ function filterByScore(results) {
   return filtered;
 }
 
+function cosineSimilarity(a, b) {
+  let dot = 0, magA = 0, magB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    magA += a[i] * a[i];
+    magB += b[i] * b[i];
+  }
+  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
+}
+
 async function runVectorSearch(queryEmbedding, limit = 10) {
-  return HealthLog.aggregate([
-    {
-      $vectorSearch: {
-        index: VECTOR_INDEX,
-        queryVector: queryEmbedding,
-        path: "embedding",
-        numCandidates: 100,
-        limit,
-      },
-    },
-    {
-      $project: {
-        name: 1,
-        age: 1,
-        week: 1,
-        weight: 1,
-        symptoms: 1,
-        vitals: 1,
-        diet: 1,
-        activity: 1,
-        aiAdvice: 1,
-        createdAt: 1,
-        score: { $meta: "vectorSearchScore" },
-      },
-    },
-  ]);
+  const docs = await HealthLog.find({ embedding: { $exists: true, $ne: [] } }).lean();
+  const scored = docs
+    .map((doc) => {
+      const score = cosineSimilarity(queryEmbedding, doc.embedding);
+      const { embedding, ...rest } = doc;
+      return { ...rest, score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+  return scored;
 }
 
 // POST /api/health/log
@@ -143,7 +136,7 @@ exports.askAI = async (req, res) => {
       .join("\n");
 
     const answer = await askWithContext(context, query);
-    res.json({ success: true, answer });
+    res.json({ success: true, answer, matchedRecords: docs });
   } catch (err) {
     console.error("❌ Ask error:", err.message);
     res.status(500).json({ success: false, error: err.message });

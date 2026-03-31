@@ -2,24 +2,20 @@ const axios = require("axios");
 
 exports.getEmbedding = async (text) => {
   try {
-    const endpoint = process.env.AZURE_OPENAI_ENDPOINT;
-    const deployment = process.env.AZURE_OPENAI_EMBEDDING_DEPLOYMENT;
-    const apiVersion = process.env.AZURE_OPENAI_API_VERSION;
+    const apiKey = process.env.GEMINI_API_KEY;
 
     const res = await axios.post(
-      `${endpoint}/openai/deployments/${deployment}/embeddings?api-version=${apiVersion}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${apiKey}`,
       {
-        input: text,
+        model: "models/gemini-embedding-001",
+        content: { parts: [{ text }] },
       },
       {
-        headers: {
-          "Content-Type": "application/json",
-          "api-key": process.env.AZURE_OPENAI_API_KEY,
-        },
+        headers: { "Content-Type": "application/json" },
       }
     );
 
-    return res.data.data[0].embedding;
+    return res.data.embedding.values;
 
   } catch (err) {
     console.error("❌ Embedding Error:", err.response?.data || err.message);

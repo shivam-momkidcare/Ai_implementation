@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { INITIAL_FORM, SYMPTOMS, babySizeLabel, trimesterLabel } from "../features/health/constants";
-import { createHealthLog, fetchHealthHistory, mapAdviceFromAi } from "../services/healthApi";
+import { createHealthLog, fetchHealthHistory, mapAdviceFromAi, askAI } from "../services/healthApi";
 import "../styles/app.css";
 import { searchHealthLogs } from "../services/healthApi";
 
@@ -15,6 +15,11 @@ export default function App() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiSections, setAiSections] = useState(null);
+  const [aiRecords, setAiRecords] = useState([]);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -126,6 +131,28 @@ export default function App() {
     setIsSearching(false);
   };
 
+  const handleAiAsk = async () => {
+    if (!aiQuery.trim()) return;
+    setAiLoading(true);
+    setAiSections(null);
+    setAiRecords([]);
+    setAiError("");
+    try {
+      const res = await askAI(aiQuery);
+      if (res.success) {
+        setAiSections(res.answer?.sections || []);
+        setAiRecords(res.matchedRecords || []);
+      } else {
+        setAiError(res.error || "Something went wrong.");
+      }
+    } catch (err) {
+      console.error("AI Ask error:", err);
+      setAiError("Server error. Please try again.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const week = parseInt(form.week, 10) || 20;
   const progress = Math.round((week / 40) * 100);
   const circumference = 2 * Math.PI * 38;
@@ -139,7 +166,7 @@ export default function App() {
       </nav>
 
       <div className="tabs">
-        {[["home", "🏠 Home"], ["track", "📋 Track Today"], ["advice", "✨ AI Advice"], ["history", "📅 History"]].map(([id, label]) => (
+        {[["home", "🏠 Home"], ["track", "📋 Track Today"], ["advice", "✨ AI Advice"], ["insights", "🧠 AI Insights"], ["history", "📅 History"]].map(([id, label]) => (
           <button key={id} className={`tab ${tab === id ? "active" : ""}`} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
@@ -354,6 +381,163 @@ export default function App() {
               <button className="submit-btn" style={{ marginTop: "8px", maxWidth: "260px" }} onClick={() => setTab("track")}>
                 📋 Start Tracking
               </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "insights" && (
+        <div className="page">
+          <div style={{ fontFamily: "'Playfair Display',serif", fontSize: "22px", fontWeight: 700, marginBottom: "16px" }}>
+            🧠 AI Health Insights
+          </div>
+
+          <div className="card">
+            <div className="card-title"><span className="icon">💬</span> Ask AI</div>
+            <div className="search-box">
+              <input
+                placeholder="e.g. What should I do about high BP in week 20?"
+                value={aiQuery}
+                onChange={(e) => setAiQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAiAsk()}
+              />
+              <button onClick={handleAiAsk} disabled={aiLoading}>
+                {aiLoading ? "..." : "Ask"}
+              </button>
+            </div>
+          </div>
+
+          {aiLoading && (
+            <div className="loading-wrap">
+              <div className="loading-petals">🧠</div>
+              <div className="loading-text">AI is analysing your records…</div>
+            </div>
+          )}
+
+          {aiError && (
+            <div className="empty-wrap">
+              <div className="empty-icon">😔</div>
+              <div className="empty-title">Oops</div>
+              <div className="empty-sub">{aiError}</div>
+            </div>
+          )}
+
+          {/* Dynamic renderer based on section count */}
+          {aiSections && aiSections.length > 0 && (
+            <>
+              {aiSections.length <= 2 ? (
+                /* CARDS layout for 1-2 sections */
+                <div className="ai-cards-single">
+                  {aiSections.map((sec, i) => (
+                    <div key={i} className={`advice-card ${sec.type}`} style={{ animationDelay: `${i * 0.1}s` }}>
+                      <div className="advice-header">
+                        <div className={`advice-icon ${sec.type}`}>{sec.icon}</div>
+                        <div>
+                          <div className="advice-title">{sec.title}</div>
+                          <div className="advice-sub">{sec.type}</div>
+                        </div>
+                      </div>
+                      <div className="advice-items">
+                        {sec.items.map((item, j) => <div key={j} className="advice-item">{item}</div>)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : aiSections.length <= 4 ? (
+                /* 2-column GRID for 3-4 sections */
+                <div className="ai-cards-grid">
+                  {aiSections.map((sec, i) => (
+                    <div key={i} className={`advice-card ${sec.type}`} style={{ animationDelay: `${i * 0.1}s` }}>
+                      <div className="advice-header">
+                        <div className={`advice-icon ${sec.type}`}>{sec.icon}</div>
+                        <div>
+                          <div className="advice-title">{sec.title}</div>
+                          <div className="advice-sub">{sec.type}</div>
+                        </div>
+                      </div>
+                      <div className="advice-items">
+                        {sec.items.map((item, j) => <div key={j} className="advice-item">{item}</div>)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                /* TABLE layout for 5+ sections */
+                <div className="card ai-table-wrap">
+                  <div className="card-title"><span className="icon">📊</span> Detailed Analysis</div>
+                  <div className="ai-table-scroll">
+                    <table className="ai-table">
+                      <thead>
+                        <tr>
+                          <th></th>
+                          <th>Section</th>
+                          <th>Details</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {aiSections.map((sec, i) => (
+                          <tr key={i}>
+                            <td className="ai-table-icon">{sec.icon}</td>
+                            <td className="ai-table-title">
+                              <strong>{sec.title}</strong>
+                              <span className={`ai-type-badge ${sec.type}`}>{sec.type}</span>
+                            </td>
+                            <td>
+                              <ul className="ai-table-items">
+                                {sec.items.map((item, j) => <li key={j}>{item}</li>)}
+                              </ul>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Matched Records */}
+              {aiRecords.length > 0 && (
+                <div className="card" style={{ marginTop: "16px" }}>
+                  <div className="card-title"><span className="icon">📋</span> Matched Records ({aiRecords.length})</div>
+                  {aiRecords.map((rec, i) => (
+                    <div key={i} className="history-item" onClick={() => {
+                      setForm({
+                        name: rec.name || "", age: String(rec.age || ""), week: String(rec.week || "20"),
+                        weight: String(rec.weight || ""), bp: String(rec.vitals?.bp || "120"),
+                        sugar: String(rec.vitals?.sugar || "90"), hb: String(rec.vitals?.hb || "11.5"),
+                        symptoms: rec.symptoms || [], diet: rec.diet || "", activity: rec.activity || "",
+                      });
+                      setAdvice(mapAdviceFromAi(rec.aiAdvice));
+                      setTab("advice");
+                    }}>
+                      <div>
+                        <div className="history-name">{rec.name}</div>
+                        <div className="history-meta">
+                          Week {rec.week} · BP {rec.vitals?.bp} · Sugar {rec.vitals?.sugar}
+                          {rec.score != null && ` · Match ${Math.round(rec.score * 100)}%`}
+                        </div>
+                      </div>
+                      <span className="week-badge">Wk {rec.week}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                className="submit-btn"
+                style={{ marginTop: "16px", background: "linear-gradient(135deg,#8aab94,#5a876a)" }}
+                onClick={() => { setAiSections(null); setAiRecords([]); setAiQuery(""); setAiError(""); }}
+              >
+                🔄 Ask Another Question
+              </button>
+            </>
+          )}
+
+          {!aiLoading && !aiSections && !aiError && (
+            <div className="empty-wrap">
+              <div className="empty-icon">🧠</div>
+              <div className="empty-title">Ask AI anything</div>
+              <div className="empty-sub">Ask about your health data — e.g. "Am I at risk for gestational diabetes?" or "Tips for week 28 fatigue"</div>
             </div>
           )}
         </div>
